@@ -1,0 +1,16 @@
+# Render blueprint: one free web service that builds the game and serves it with the multiplayer relay.
+# Render → New → Blueprint → pick this repo. It sets PORT itself.
+services:
+  - type: web
+    name: shelf-life
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      # every connection arrives through Render's proxy; per-player limits need the real address it forwards
+      - key: TRUST_PROXY
+        value: "1"
