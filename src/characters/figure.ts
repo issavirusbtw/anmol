@@ -71,6 +71,12 @@ export class Figure {
   yOffset = 0;
   /** landing impact 0..1: set on touchdown, the figure squashes and recovers */
   land = 0;
+  /** sharp-turn plant, signed by turn direction: hips drop and the body shifts weight before swinging round */
+  turn = 0;
+  /** stopping from speed: upper body carries forward, knees absorb it */
+  settle = 0;
+  /** a timed contact action (dig into a heap, drink at the drip, fill a cap); t runs 0..dur */
+  action: { kind: 'dig' | 'drink' | 'fill'; t: number; dur: number } | null = null;
   /** displayed pose + crossfade state, owned by FigureSystem */
   anim: { shown: Pose; from: Pose; blend: number; state: AnimState; yaw: number; bank: number } | null = null;
   constructor(
@@ -80,8 +86,9 @@ export class Figure {
   ) {}
   /** advance animation phase by distance moved */
   stride(dist: number, run: boolean): void {
-    // step lengths matched to the leg swing in gait() so planted feet don't skate
-    this.phase += (dist / (run ? 1.5 : 0.92)) * Math.PI;
+    // step length follows the same walk→run blend as gait(), so the swing widens with speed and planted feet don't skate
+    const r = this.speed > 0 ? Math.min(1, Math.max(0, (this.speed - 3.4) / 3.2)) : run ? 1 : 0;
+    this.phase += (dist / (0.92 + 0.58 * r)) * Math.PI;
   }
 }
 
@@ -160,6 +167,65 @@ function gait(p: Pose, f: Figure, carry: boolean): void {
   p.elL = mix(0.3, 1.35) + Math.max(0, -s) * 0.35;
   p.elR = mix(0.3, 1.35) + Math.max(0, s) * 0.35;
   p.abL = p.abR = mix(0.1, 0.18);
+}
+
+const ease = (x: number) => {
+  const c = Math.min(1, Math.max(0, x));
+  return c * c * (3 - 2 * c);
+};
+/** Contact phase where the hand meets the material; item feedback is timed to this. */
+export const CONTACT_AT = { dig: 0.42, drink: 0.4, fill: 0.45 } as const;
+
+/**
+ * Timed contact actions, u = 0..1 across the action. Each one anticipates, reaches, holds the contact,
+ * and recovers, so the hand visibly meets the heap or the water before anything is gained.
+ */
+function actionPose(p: Pose, kind: 'dig' | 'drink' | 'fill', u: number): void {
+  const c = CONTACT_AT[kind];
+  const down = ease(u / c); // 0→1 into the contact
+  const up = ease((u - c - 0.12) / (1 - c - 0.12)); // 0→1 recovering after a short hold
+  const k = down * (1 - up);
+  if (kind === 'dig') {
+    // squat over the heap, right hand digs in and pulls back to the chest with the find
+    p.hipL = p.hipR = 1.05 * k;
+    p.kneeL = 1.5 * k;
+    p.kneeR = 1.25 * k;
+    p.ankleL = p.ankleR = -0.25 * k;
+    p.bob = -0.33 * k;
+    p.lean = 0.55 * k + 0.08 * up * (1 - up);
+    p.headPitch = 0.45 * k;
+    const grab = u > c && u < c + 0.12 ? Math.sin(((u - c) / 0.12) * Math.PI) : 0;
+    p.shR = 1.25 * k + 0.6 * up * (1 - up) * 4 * 0.25;
+    p.elR = 0.25 * k + grab * 0.5 + 1.6 * up * (1 - up) * 2;
+    p.abR = 0.12;
+    p.shL = 0.55 * k;
+    p.elL = 0.9 * k;
+    p.abL = 0.3 * k + 0.08;
+    p.twist = -0.15 * k;
+  } else if (kind === 'drink') {
+    // reach up into the drip with a cupped hand, then bring it to the mouth and tip the head back
+    const toMouth = ease((u - c - 0.05) / 0.2) * (1 - ease((u - 0.86) / 0.14));
+    const reach = down * (1 - ease((u - c - 0.05) / 0.2));
+    p.shR = 2.65 * reach + 1.35 * toMouth;
+    p.elR = 0.3 * reach + 2.25 * toMouth;
+    p.abR = 0.12 + 0.1 * toMouth;
+    p.lean = -0.08 * reach - 0.06 * toMouth;
+    p.headPitch = -0.45 * reach - 0.35 * toMouth;
+    p.ankleL = p.ankleR = 0.18 * reach; // up on the toes to reach the drop
+    p.kneeL = p.kneeR = 0.08;
+    p.shL = 0.15;
+    p.elL = 0.3;
+  } else {
+    // fill: crouch at the puddle holding the cap out in both hands, then tuck it into the pack strap
+    p.hipL = p.hipR = 0.7 * k;
+    p.kneeL = p.kneeR = 1.05 * k;
+    p.bob = -0.22 * k;
+    p.lean = 0.45 * k;
+    p.headPitch = 0.4 * k;
+    p.shL = p.shR = 1.05 * k + 0.5 * up * (1 - up) * 2;
+    p.elL = p.elR = 0.5 * k + 1.2 * up * (1 - up) * 2;
+    p.abL = p.abR = 0.06;
+  }
 }
 
 function poseFor(f: Figure): Pose {
@@ -258,6 +324,10 @@ function poseFor(f: Figure): Pose {
       break;
     }
     case 'collect': {
+      if (f.action) {
+        actionPose(p, f.action.kind, f.action.t / f.action.dur);
+        break;
+      }
       const k = (Math.sin(t * 4 + f.id) + 1) / 2;
       p.lean = 0.5 + k * 0.4;
       p.hipL = p.hipR = 0.4 + k * 0.4;
@@ -484,6 +554,32 @@ export class FigureSystem {
       p.abR += l * 0.3;
       f.land *= Math.exp(-dt * 7);
     } else f.land = 0;
+    if (Math.abs(f.turn) > 0.01) {
+      // plant before a sharp turn: drop the hips, push off the outside foot, shoulders lead the new heading
+      const a = Math.abs(f.turn);
+      p.sway += f.turn * 0.07;
+      p.bank -= f.turn * 0.1;
+      p.twist += f.turn * 0.3;
+      p.headYaw += f.turn * 0.35;
+      p.lean -= a * 0.12;
+      p.bob -= a * 0.06;
+      p.kneeL += a * 0.35;
+      p.kneeR += a * 0.35;
+      p.hipL += a * 0.2;
+      p.hipR += a * 0.2;
+      f.turn *= Math.exp(-dt * 9);
+    } else f.turn = 0;
+    if (f.settle > 0.01) {
+      // coming to a stop: momentum tips the chest forward, knees soak it up, arms swing through
+      const s = f.settle;
+      p.lean += s * 0.14;
+      p.bob -= s * 0.05;
+      p.kneeL += s * 0.25;
+      p.kneeR += s * 0.25;
+      p.shL += s * 0.25;
+      p.shR += s * 0.25;
+      f.settle *= Math.exp(-dt * 6);
+    } else f.settle = 0;
     return p;
   }
 
