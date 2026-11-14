@@ -1,4 +1,4 @@
-// Distant compartments: the rest of the cabinet, built cheaply but densely, with simplified crowds.
+﻿// Distant compartments: the rest of the cabinet, built cheaply but densely, with simplified crowds.
 import * as THREE from 'three';
 import { Rng } from '../core/rng';
 import { WorldBuilder } from './builder';
@@ -7,6 +7,7 @@ import { PAL, awning, bottleCap, crate, fairyLights, spool, toothpick } from './
 import { apartmentStack, pod } from './structures';
 import { TIER_Y, CABINET } from '../config';
 
+import { dressDistrict } from './districts';
 export interface Compartment {
   x0: number;
   x1: number;
@@ -46,6 +47,7 @@ export function compartments(): Compartment[] {
 
 export function buildDistant(b: WorldBuilder, rng0: Rng, walkers: CrowdWalker[]): void {
   for (const c of compartments()) {
+    if (c.name === 'Lacquer Court') continue; // playable ruins, built in outside.ts
     const rng = rng0.fork(`${c.name}-${c.tier}-${c.x0}`);
     b.chunk = `distant-${c.tier}`;
     const y = TIER_Y[c.tier];
@@ -60,10 +62,12 @@ export function buildDistant(b: WorldBuilder, rng0: Rng, walkers: CrowdWalker[])
     const floors = Math.max(2, Math.floor((h - 3) / 3.1));
     apartmentStack(b, new Frame(cx, y, -11.5), rng.fork('stack'), w - 2, 5, rich ? Math.max(2, floors - 2) : floors, { wealth: c.wealth, lit: rich ? 0.85 : 0.55, floorH: rich ? 3.6 : 3.0 });
     // mid-ground clutter (the Sump Ward is built as a playable zone instead)
+    // Lint Flats: the west half is the playable farm (farm.ts); only the wild half past the fence gets clutter
     const playable = c.name === 'Sump Ward';
-    const n = playable ? 0 : Math.floor(w / 7);
+    const x0 = c.name === 'Lint Flats' ? 46 : c.x0;
+    const n = playable || dressDistrict(b, c, x0, y, ceil, rng.fork('dress')) ? 0 : Math.floor((c.x1 - x0) / 7);
     for (let i = 0; i < n; i++) {
-      const x = c.x0 + 3 + (i + 0.5) * ((w - 6) / n) + rng.range(-1, 1);
+      const x = x0 + 3 + (i + 0.5) * ((c.x1 - x0 - 6) / n) + rng.range(-1, 1);
       const z = rng.range(-6, 6);
       const f = new Frame(x, y, z, rng.range(-0.4, 0.4));
       const k = rng.next();
@@ -113,7 +117,7 @@ export function buildDistant(b: WorldBuilder, rng0: Rng, walkers: CrowdWalker[])
     const nw = playable ? 0 : rich ? 5 : 9;
     for (let i = 0; i < nw; i++) {
       const z = rng.range(-5, 10);
-      const xa = rng.range(c.x0 + 3, c.x1 - 3), xb = rng.range(c.x0 + 3, c.x1 - 3);
+      const xa = rng.range(x0 + 3, c.x1 - 3), xb = rng.range(x0 + 3, c.x1 - 3);
       walkers.push({ a: new THREE.Vector3(xa, y, z), b: new THREE.Vector3(xb, y, z + rng.range(-2, 2)), speed: rng.range(0.8, 1.5), standing: rng.chance(0.3) });
     }
     // front lip railing (visual only)

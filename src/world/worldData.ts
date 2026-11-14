@@ -18,7 +18,8 @@ export type HotKind =
   | 'repair'
   | 'reserve'
   | 'cart'
-  | 'drop';
+  | 'drop'
+  | 'expedition';
 
 export interface Hotspot {
   id: string;
@@ -69,6 +70,9 @@ export class WorldData {
   /** points that emit steam */
   steam: THREE.Vector3[] = [];
   candyLanding = new THREE.Vector3();
+  /** ambient insects placed by the district builders (see world/wildlife.ts) */
+  ants: { trail: THREE.Vector3[]; count: number }[] = [];
+  moths: { light: THREE.Vector3; range: number; rests: { pos: THREE.Vector3; normal: THREE.Vector3 }[] }[] = [];
   sump?: { sites: THREE.Vector3[]; spiderHomes: THREE.Vector3[]; cart: THREE.Vector3; gate: THREE.Vector3; basin: THREE.Vector3 };
   districtSpawn = new Map<string, { pos: THREE.Vector3; yaw: number }>();
 

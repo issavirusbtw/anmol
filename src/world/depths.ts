@@ -7,6 +7,8 @@ import { WorldData } from './worldData';
 import { PAL, awning, bottleCap, crate, fairyLights, hangingLamp, litter, paperSheet, railing, signBoard, spool, stairs, tape, toothpick, battery, threadWrap, button } from './props';
 import { apartmentStack, buildLift, matchboxHome, scrapHeap, stall, waterPoint } from './structures';
 import { TIER_Y } from '../config';
+import { buildFarm } from './farm';
+import { beerBottle, candyWrapper, crownCap, crumbs, dustDrift, foilGutter, foilRidge, gritLine, lintFibres, pencilRamp, sardineTin, standingBattery, sugarTrail } from './landmarks';
 
 export const DEPTHS_CEIL = TIER_Y[1] - 1.3;
 
@@ -27,12 +29,20 @@ export function buildDepths(b: WorldBuilder, wd: WorldData, rng0: Rng): void {
     for (let z = -13; z < 13; z += 2.6) {
       if (s < 0 && z > -10 && z < 1) continue; // keep the stairs clear
       if (s < 0 && z > 4.5 && z < 10) continue; // keep the Sump gate clear
+      if (s > 0 && z > -2 && z < 5) continue; // the sardine tin goes through here
       const h = rng.range(2, 4.5);
       crate(b, F, x + rng.range(-0.3, 0.3), z, 0, 1.6, h, 2.4, rng, { open: false });
       if (rng.chance(0.5)) crate(b, F, x, z + 0.4, h, 1.4, rng.range(1, 2.2), 1.8, rng, { open: true });
     }
-    if (s > 0) b.col.add({ x: s * 22.6, z: 0, w: 1.4, d: 30, minY: 0, maxY: DEPTHS_CEIL, tag: 'bound', noCamera: false });
   }
+  // east wall: open only through the sardine tin (its rims close the gap) into the Lint Flats farm yard
+  b.col.add({ x: 22.6, z: -8.25, w: 1.4, d: 13.5, minY: 0, maxY: DEPTHS_CEIL, tag: 'bound' });
+  b.col.add({ x: 22.6, z: 9.45, w: 1.4, d: 11.1, minY: 0, maxY: DEPTHS_CEIL, tag: 'bound' });
+  sardineTin(b, new Frame(23.4, 0, 1.2), rng.fork('tin'));
+  // farm yard limits: the Lint Flats back stack and a fence line at x 44 (the wild half beyond is scenery)
+  b.col.add({ x: 33.3, z: -11.5, w: 21.4, d: 5, minY: 0, maxY: DEPTHS_CEIL, tag: 'bound' });
+  b.col.add({ x: 44.2, z: 0, w: 0.6, d: 30, minY: 0, maxY: DEPTHS_CEIL, tag: 'bound' });
+  buildFarm(b, rng.fork('farm'));
   // west wall has a gate to the Sump Ward at z 6.5..9, barred until Ines's lift job
   b.col.add({ x: -22.6, z: -4.25, w: 1.4, d: 21.5, minY: 0, maxY: DEPTHS_CEIL, tag: 'bound' });
   b.col.add({ x: -22.6, z: 12, w: 1.4, d: 6, minY: 0, maxY: DEPTHS_CEIL, tag: 'bound' });
@@ -196,16 +206,41 @@ export function buildDepths(b: WorldBuilder, wd: WorldData, rng0: Rng): void {
     scrapHeap(b, F, x, z, 1.3, rng.fork(`heap${i}`));
     wd.hot(`heap${i}`, 'scavenge', [x, 0, z], 2.2, { loot: i % 2 ? ['scrap', 'fabric'] : ['scrap', 'metal', 'electronics'] });
   });
-  // a fallen pencil as a landmark
-  b.cyl(0.5, 0.5, 12, [-16, 0.5, 13.0], { mat: 'painted', color: 0xe1b12c, rot: [Math.PI / 2, 0.15, Math.PI / 2], seg: 6, collide: true });
-  b.cyl(0.0, 0.5, 1.6, [-9.4, 0.5, 13.98], { mat: 'wood', color: 0xe6c9a0, rot: [0, 0.15, -Math.PI / 2], seg: 6 });
-  // a giant's teaspoon leaning against the west junk wall (no collider; rests on the pencil)
+  // the gutter yard: a fallen longneck across the Spill, its mouth propped on a battery; walk under the neck,
+  // or climb the crown cap -> pencil -> spine. Foil crumpled against its base carries the drip's overflow.
+  beerBottle(b, -2.6, 12.5, [-0.9, -0.44], 0.145, rng.fork('bottle'));
+  standingBattery(b, -16.55, 5.7, 0x2e2e2e);
+  crownCap(b, -20.8, 11.8, 0.9, 0xc0392b, rng);
+  pencilRamp(b, [-21.5, 0.95, 12.6], [-10.6, 5.4, 9.0], 0.5, 0xe1b12c, 1.05);
+  foilRidge(b, [-3, 0, 5], [-3.41, 4.47, 11.43], 3.6, rng.fork('foil'));
+  foilGutter(b, [[-4.6, 0.06, 7.6], [-1.1, 0.04, 8.6], [-1.1, 0.03, 13.6]], 0.9, rng);
+  // branch straw: carries the drip east along the glass toward the Lint Flats farm
+  b.rod([-1.1, 0.22, 13.8], [21.2, 0.22, 13.8], 0.21, { mat: 'plasticGloss', color: 0xf4f4f4, seg: 12 });
+  for (let x = 0.2; x < 21; x += 1.6) b.cyl(0.215, 0.215, 0.3, [x, 0.22, 13.8], { mat: 'plasticGloss', color: 0xc0392b, rot: [0, 0, Math.PI / 2], seg: 12 });
+  b.col.add({ x: 10.05, z: 13.8, w: 22.3, d: 0.45, minY: 0, maxY: 0.43 });
+  // a giant's teaspoon leaning against the west junk wall (no collider)
   {
     const th = 0.354;
-    b.box(0.12, 4.9, 0.55, [-21.15, 3.7, 12.9], { mat: 'brass', color: 0xe4e6ea, rot: [0, 0, th] });
-    b.sphere(0.36, [-22.0, 6.1, 12.9], { mat: 'brass', color: 0xe4e6ea, scale: [0.4, 1.0, 1.5], rot: [0, 0, th], seg: 10 });
-    b.sphere(1.1, [-19.9, 1.25, 12.9], { mat: 'brass', color: 0xf0f1f4, scale: [1.15, 0.42, 0.8], rot: [0, 0, th - 0.1], seg: 16 });
+    b.box(0.12, 4.9, 0.55, [-21.15, 3.7, 13.7], { mat: 'brass', color: 0xe4e6ea, rot: [0, 0, th] });
+    b.sphere(0.36, [-22.0, 6.1, 13.7], { mat: 'brass', color: 0xe4e6ea, scale: [0.4, 1.0, 1.5], rot: [0, 0, th], seg: 10 });
+    b.sphere(1.1, [-19.9, 1.25, 13.7], { mat: 'brass', color: 0xf0f1f4, scale: [1.15, 0.42, 0.8], rot: [0, 0, th - 0.1], seg: 16 });
   }
+  // dirt where it collects: grit in the floor joint, lint under the door rail, a polished track on the daily route
+  b.box(43, 0.012, 0.07, [0, 0.012, 9.2], { mat: 'matte', color: 0x4a3a28, noBake: true });
+  gritLine(b, [-21, 0, 9.2], [21, 0, 9.2], 140, rng);
+  lintFibres(b, -21, 21, 14.0, 14.45, 46, rng);
+  dustDrift(b, -21.2, 21.2, 14.3, 0.4, rng);
+
+  // ---------- the Backs: the midden behind the homes, kept by the ants ----------
+  const candy = candyWrapper(b, new Frame(-5.2, 0, -12.2), rng.fork('wrapper'));
+  sugarTrail(b, [new THREE.Vector3(candy.x - 0.9, 0, candy.z), new THREE.Vector3(-10.5, 0, -12.6), new THREE.Vector3(-12.5, 0, -13.1)], 70, rng);
+  dustDrift(b, -21.4, -0.4, -13.8, 0.4, rng);
+  crumbs(b, -11, -12.4, 1.6, 18, rng);
+  b.sphere(0.45, [-19.5, 0.05, -13.85], { mat: 'crumb', color: 0x4a3a28, scale: [1.4, 0.35, 0.8], seg: 9, noBake: true }); // nest mound at the seam
+  wd.ants.push({
+    trail: [new THREE.Vector3(-19.5, 0, -13.75), new THREE.Vector3(-17, 0, -13.3), new THREE.Vector3(-14, 0, -13.45), new THREE.Vector3(-11.5, 0, -13.1), new THREE.Vector3(candy.x - 1.05, 0, candy.z - 0.1)],
+    count: 40,
+  });
   signBoard(b, F, 'spill', -17, 2.4, 2.4, 2.2, [0, 0.2, 0], 'plank');
   toothpick(b, F, -17.9, 2.3, 0, 2.0);
   toothpick(b, F, -16.1, 2.3, 0, 2.0);
@@ -251,10 +286,9 @@ export function buildDepths(b: WorldBuilder, wd: WorldData, rng0: Rng): void {
   wd.hot('vendor-rook', 'vendor', wf.p(-3.8, 0, -2.2), 2.0, { vendor: 'rook' });
 
   // ---------- front of the cabinet: the window bench ----------
-  b.box(6, 0.4, 1.0, [-1, 0.6, 12.4], { mat: 'wood', color: 0xe3c58f, collide: true });
-  for (const x of [-3.6, 1.6]) spool(b, F, x, 12.4, 0, 0.4, 0.4, 0x6a994e, false);
-  crate(b, F, 5, 12.8, 0, 1.6, 1.2, 1.4, rng, { collide: true });
-  crate(b, F, 6.6, 12.6, 0, 1.2, 0.8, 1.0, rng, { collide: true });
+  b.box(6, 0.4, 1.0, [2.5, 0.6, 12.4], { mat: 'wood', color: 0xe3c58f, collide: true });
+  for (const x of [-0.1, 5.1]) spool(b, F, x, 12.4, 0, 0.4, 0.4, 0x6a994e, false);
+  crate(b, F, 7.2, 12.6, 0, 1.2, 0.8, 1.0, rng, { collide: true });
 
   // ---------- lighting ----------
   // fairy lights from the cliff across Drip Row to tall dowel poles on the south side
@@ -273,6 +307,19 @@ export function buildDepths(b: WorldBuilder, wd: WorldData, rng0: Rng): void {
   hangingLamp(b, [-17, DEPTHS_CEIL, 7.5], 13.5, 0xffa860, 'none', 1.3, 9);
   // a warm bulb just east of the Sump gate so the way out reads from the dark
   hangingLamp(b, [-20.5, DEPTHS_CEIL, 7.75], 13.8, 0xffb86a, 'cap', 1.2, 8);
+  // an LED puck stuck under the shelf: cool light that rakes the underside, and the moth's lamp
+  b.cyl(0.95, 0.95, 0.22, [-12, DEPTHS_CEIL - 0.11, 9], { mat: 'plasticGloss', color: 0xe8e8e8, seg: 24 });
+  b.cyl(0.7, 0.7, 0.03, [-12, DEPTHS_CEIL - 0.235, 9], { mat: 'glow', color: 0xfff3dc, seg: 24 });
+  b.sag([-12.9, DEPTHS_CEIL - 0.05, 9], [-21.5, DEPTHS_CEIL - 0.05, 9.4], 0.6, 0.03, { mat: 'thread', color: 0x222222 });
+  b.lamp([-12, DEPTHS_CEIL - 0.6, 9], 0xfff0d8, 2.0, 16, 0.6, 'ledPuck');
+  wd.moths.push({
+    light: new THREE.Vector3(-12, DEPTHS_CEIL - 1.2, 9),
+    range: 4.5,
+    rests: [
+      { pos: new THREE.Vector3(-14, 6.5, 14.6), normal: new THREE.Vector3(0, 0, -1) },
+      { pos: new THREE.Vector3(-9, 8, 14.6), normal: new THREE.Vector3(0, 0, -1) },
+    ],
+  });
 
   // ---------- gameplay registry ----------
   wd.hot('npc-mara', 'npc', [-18.3, 0, -2.9], 2.0, { npc: 'mara' });
@@ -317,11 +364,11 @@ export function buildDepths(b: WorldBuilder, wd: WorldData, rng0: Rng): void {
   N('d.P1', [1.6, 0, 6.95], ['stallBack']);
   N('d.Ps0', [3.9, 0, 5.0], []);
   N('d.Ps1', [3.9, 0, 6.95], []);
-  N('d.F2', [-3.2, 0, 5.0], []);
+  N('d.HB', [-14.4, 0, 6.6], ['heap']);
   N('d.WS0', [11.0, 0, 5.0], ['workshop']);
   N('d.WS1', [14.0, 0, 9.4], ['bench']);
-  N('d.F0', [-1.0, 0, 11.2], ['window', 'sit']);
-  N('d.F1', [3.2, 0, 11.0], ['window']);
+  N('d.F0', [2.5, 0, 11.2], ['window', 'sit']);
+  N('d.F1', [5.4, 0, 11.0], ['window']);
   N('d.SB', [-21.0, 0, -0.2], ['stairs']);
   N('d.ST', [-21.0, 2.9, -4.9], ['stairs']);
   N('d.G0', [-20.9, 2.9, -6.3], ['gallery']);
@@ -338,11 +385,11 @@ export function buildDepths(b: WorldBuilder, wd: WorldData, rng0: Rng): void {
   wd.link('d.L6', 'd.K0', 'd.KW', 'd.K3', 'd.K2', 'd.KE', 'd.K1', 'd.L8');
   wd.link('d.L7', 'd.K0');
   wd.link('d.L7', 'd.K1');
-  wd.link('d.L0', 'd.S0', 'd.H0', 'd.H1', 'd.W0', 'd.L4');
+  wd.link('d.L0', 'd.S0', 'd.H0', 'd.H1', 'd.HB', 'd.W0', 'd.L4');
   wd.link('d.S0', 'd.L1');
   wd.link('d.W0', 'd.P0', 'd.L6');
   wd.link('d.P0', 'd.Ps0', 'd.Ps1', 'd.P1');
-  wd.link('d.W0', 'd.F2', 'd.F0', 'd.F1');
+  wd.link('d.Ps1', 'd.F1', 'd.F0');
   wd.link('d.P0', 'd.WS0', 'd.WS1');
   wd.link('d.WS0', 'd.L8');
   wd.link('d.L0', 'd.SB', 'd.ST', 'd.G0', 'd.G1', 'd.G2', 'd.G3', 'd.G4');

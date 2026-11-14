@@ -5,6 +5,8 @@ import { WorldBuilder } from './builder';
 import { CABINET as C, TIER_Y } from '../config';
 import { Materials } from '../render/materials';
 import { fingerprints } from '../render/textures';
+import { doorHinge } from './landmarks';
+import { BACK_CRACKS } from './outside';
 
 export interface Hole {
   x0: number;
@@ -51,10 +53,22 @@ export function buildCabinet(b: WorldBuilder, holesByTier: Hole[][], glassShelf:
   b.chunk = 'cabinet';
   const H = C.top;
   // back panel, sides, top, base
-  b.box(C.maxX - C.minX + 2.4, H + 2, 1.2, [0, H / 2, C.minZ - 0.6], { mat: 'cabinetWood', collide: true });
+  // the back panel has two cracks (world/outside.ts): one at the foot of the Backs, the way outside, and one
+  // into Lacquer Court where the cargo line tops out. Each is a gap 2.8 tall with panel above and below.
+  const zc = C.minZ - 0.6;
+  let x = C.minX - 1.2;
+  for (const k of BACK_CRACKS) {
+    b.box(k.x0 - x, H + 2, 1.2, [(x + k.x0) / 2, H / 2, zc], { mat: 'cabinetWood', collide: true });
+    const w = k.x1 - k.x0, mx = (k.x0 + k.x1) / 2;
+    b.box(w, H + 1 - k.y - 2.8, 1.2, [mx, (k.y + 2.8 + H + 1) / 2, zc], { mat: 'cabinetWood', collide: true });
+    b.box(w, k.y + 2.5, 1.2, [mx, (k.y - 2.5) / 2, zc], { mat: 'cabinetWood', collide: true });
+    x = k.x1;
+  }
+  b.box(C.maxX + 1.2 - x, H + 2, 1.2, [(x + C.maxX + 1.2) / 2, H / 2, zc], { mat: 'cabinetWood', collide: true });
   for (const s of [-1, 1]) b.box(1.2, H + 2, C.glassZ - C.minZ + 1.6, [s * (C.maxX + 0.6), H / 2, (C.minZ + C.glassZ) / 2], { mat: 'cabinetWood', collide: true });
   b.box(C.maxX - C.minX + 2.4, 1.6, C.glassZ - C.minZ + 1.6, [0, H + 0.8, (C.minZ + C.glassZ) / 2], { mat: 'cabinetWood' });
-  b.box(C.maxX - C.minX + 2.4, 20, C.glassZ - C.minZ + 2, [0, -10, (C.minZ + C.glassZ) / 2], { mat: 'cabinetWood', collide: true });
+  // the base is a thin board on four legs: the room floor runs underneath (see world/outside.ts)
+  b.box(C.maxX - C.minX + 2.4, 2.5, C.glassZ - C.minZ + 2, [0, -1.25, (C.minZ + C.glassZ) / 2], { mat: 'cabinetWood', collide: true });
   for (let i = 1; i < TIER_Y.length; i++) shelf(b, TIER_Y[i], holesByTier[i] ?? [], glassShelf.get(i));
   // shelf-pin brackets on the back
   for (let i = 1; i < TIER_Y.length; i++)
@@ -62,8 +76,20 @@ export function buildCabinet(b: WorldBuilder, holesByTier: Hole[][], glassShelf:
   // front pilasters at the bay boundaries
   for (const x of [-C.dividerX, C.dividerX]) b.box(1.4, H, 1.6, [x, H / 2, C.glassZ - 0.9], { mat: 'cabinetWood', collide: true });
   // glass door frame
-  for (const x of [C.minX - 0.4, 0, C.maxX + 0.4]) b.box(x === 0 ? 0.8 : 1.4, H + 1, 0.8, [x, H / 2, C.glassZ + 0.2], { mat: 'cabinetWood' });
+  for (const x of [C.minX - 0.4, -C.dividerX, 0, C.dividerX, C.maxX + 0.4]) b.box(x === 0 ? 0.8 : 1.4, H + 1, 0.8, [x, H / 2, C.glassZ + 0.2], { mat: 'cabinetWood' });
   b.box(C.maxX - C.minX + 2, 1.2, 0.8, [0, H + 0.2, C.glassZ + 0.2], { mat: 'cabinetWood' });
+  // bottom door rail (a low wall you look over from the floor), hinges on the centre doors, a flush bolt
+  b.box(C.maxX - C.minX, 2.4, 0.5, [0, 1.2, C.glassZ - 0.05], { mat: 'cabinetWood', color: 0xe6d6c4 });
+  b.box(C.maxX - C.minX, 0.06, 0.06, [0, 2.42, C.glassZ - 0.3], { mat: 'brass', color: 0xffffff, noBake: true });
+  // each bay hangs its own doors on the pilasters, so both faces carry a hinge
+  for (const y0 of [5.5, H - 12.5])
+    for (const s of [-1, 1] as const) {
+      doorHinge(b, s * (C.dividerX - 0.8), C.glassZ - 0.3, y0, y0 + 7, -s as 1 | -1);
+      doorHinge(b, s * (C.dividerX + 0.8), C.glassZ - 0.3, y0, y0 + 7, s);
+    }
+  b.box(0.32, 1.8, 0.2, [-0.6, 3.4, C.glassZ - 0.3], { mat: 'brass', color: 0xffffff });
+  b.cyl(0.14, 0.14, 0.9, [-0.6, 2.1, C.glassZ - 0.3], { mat: 'brass', color: 0xffffff, seg: 10 });
+  b.sphere(0.2, [-0.6, 3.9, C.glassZ - 0.5], { mat: 'brass', color: 0xffffff, seg: 10 });
   // brass handle + keyhole on the doors
   for (const s of [-1, 1]) {
     b.box(0.3, 9, 0.5, [s * 1.4, 64, C.glassZ + 0.75], { mat: 'brass', color: 0xffffff });
@@ -91,16 +117,38 @@ export function buildGlass(scene: THREE.Scene, mats: Materials, rng: Rng): THREE
   // night haze just beyond the glass keeps the bedroom a soft suggestion rather than a second set
   const haze = new THREE.Mesh(
     new THREE.PlaneGeometry(C.maxX - C.minX + 400, C.top + 200),
-    new THREE.MeshBasicMaterial({ color: 0x182030, transparent: true, opacity: 0.5, depthWrite: false, fog: false, side: THREE.DoubleSide }),
+    new THREE.MeshBasicMaterial({ color: 0x182030, transparent: true, opacity: 0.28, depthWrite: false, fog: false, side: THREE.DoubleSide }),
   );
   haze.position.set(0, C.top / 2, C.glassZ + 3);
   haze.renderOrder = 9;
   haze.name = 'glassHaze';
   // only seen from inside the cabinet; from the bedroom the city should glow through clearly
   haze.onBeforeRender = (_r, _s, cam) => {
-    (haze.material as THREE.MeshBasicMaterial).opacity = cam.position.z < C.glassZ ? 0.5 : 0;
+    (haze.material as THREE.MeshBasicMaterial).opacity = cam.position.z < C.glassZ ? 0.28 : 0;
   };
   scene.add(haze);
+  // faint reflections of Drip Row's fairy lights, mirrored in the glass (fake: points behind the pane)
+  {
+    const pts: number[] = [], cols: number[] = [];
+    const c = new THREE.Color();
+    for (let i = 0; i < 46; i++) {
+      const x = -20 + i * 0.72 + rng.range(-0.2, 0.2);
+      const sag = Math.sin(((x + 20) % 11.5) / 11.5 * Math.PI);
+      pts.push(x, 6.3 - sag * 0.9, 2 * C.glassZ - 3.2 + rng.range(-0.3, 0.3));
+      c.setHex(rng.pick([0xffb35c, 0xffc47a, 0xff9f45, 0xffd08a]));
+      cols.push(c.r, c.g, c.b);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    const m = new THREE.PointsMaterial({ size: 0.5, vertexColors: true, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+    const refl = new THREE.Points(g, m);
+    refl.renderOrder = 12;
+    refl.onBeforeRender = (_r, _s, cam) => {
+      m.opacity = cam.position.z < C.glassZ && cam.position.y < TIER_Y[1] ? 0.3 : 0;
+    };
+    scene.add(refl);
+  }
   for (const s of [-1, 1]) {
     const w = (C.maxX - C.minX) / 2 - 0.8;
     const pane = new THREE.Mesh(new THREE.BoxGeometry(w, C.top, 0.25), glass);
@@ -159,5 +207,5 @@ export function buildRoom(b: WorldBuilder, rng: Rng): void {
   b.box(2, 90, 70, [-328, floorY + 190, 140], { mat: 'painted', color: 0x1c2340, noBake: true });
   for (let i = 0; i < 4; i++) b.sphere(rng.range(5, 12), [-326, floorY + rng.range(160, 220), rng.range(115, 165)], { mat: 'glowSoft', color: rng.pick([0xe07a5f, 0x81b29a, 0xf2cc8f]), scale: [0.2, 1, 1], noBake: true });
   // the cabinet stands on legs
-  for (const x of [-60, 60]) for (const z of [-10, 12]) b.box(6, 20, 6, [x, floorY + 10, z], { mat: 'cabinetWood', noBake: true });
+  for (const x of [-60, 60]) for (const z of [-10, 12]) b.box(6, 17.5, 6, [x, floorY + 8.75, z], { mat: 'cabinetWood', noBake: true, collide: true });
 }
