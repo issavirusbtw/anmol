@@ -157,7 +157,7 @@ export class Underfall {
   }
 
   inSump(p = this.g.player.body.pos): boolean {
-    return p.x < SUMP_X && p.y < 3;
+    return p.x < SUMP_X && p.y < 3 && p.y > -1 && p.z > -14;
   }
 
   /** true for 120 s after the player knocks down a Tallyman */
@@ -208,7 +208,7 @@ export class Underfall {
     const wantDraw = !ui && st.weapons.sling && g.input.isDown('KeyQ') && st.count('grit') > 0;
     if (wantDraw) {
       this.drawing = true;
-      this.charge = Math.min(1, this.charge + dt / 0.8);
+      this.charge = Math.min(1, this.charge + dt / (g.story.flags.has('silkBands') ? 0.55 : 0.8));
       fig.yaw = g.cam.yaw + Math.PI;
     } else if (this.drawing) {
       if (this.charge > 0.15) this.fire();
@@ -288,7 +288,7 @@ export class Underfall {
     const mesh = new THREE.Mesh(this.shotGeo, this.shotMat);
     mesh.position.copy(from);
     g.scene.add(mesh);
-    this.shots.push({ mesh, pos: from, vel: dir.multiplyScalar(14 + 16 * c), dmg: Math.round(8 + 14 * c), life: 3 });
+    this.shots.push({ mesh, pos: from, vel: dir.multiplyScalar(14 + 16 * c), dmg: Math.round((8 + 14 * c) * (g.story.flags.has('silkBands') ? 1.5 : 1)), life: 3 });
     if (this.shots.length > 12) this.removeShot(this.shots[0]);
     g.bus.emit({ type: 'sfx', name: 'twang' });
   }
@@ -304,6 +304,7 @@ export class Underfall {
     for (const s of this.spiders) if (s.alive) out.push({ c: s.body.pos.clone().setY(s.body.pos.y + 0.35), r: 0.6, assist: true, hurt: (n, push) => this.hurtSpider(s, n, push) });
     for (const t of this.tallymen) if (t.state !== 'down') out.push({ c: t.body.pos.clone().setY(t.body.pos.y + 0.9), r: 0.45, assist: this.hostile(t), hurt: (n, push) => this.hurtTally(t, n, push) });
     out.push(...this.g.net.targets());
+    out.push(...(this.g.expedition?.targets() ?? []), ...(this.g.critters?.targets() ?? []));
     return out;
   }
 
@@ -328,7 +329,7 @@ export class Underfall {
           break;
         }
       }
-      if (!done && (g.col.raycast(s.pos, dir, len) < len || s.pos.y < -1)) done = true;
+      if (!done && (g.col.raycast(s.pos, dir, len) < len || s.pos.y < -21)) done = true;
       s.pos.add(step);
       s.mesh.position.copy(s.pos);
       if (done || s.life <= 0) this.removeShot(s);

@@ -3,7 +3,7 @@ import { Bus } from '../core/bus';
 import { hashSeed } from '../core/rng';
 
 export type Item = 'food' | 'water' | 'candy' | 'scrap' | 'fabric' | 'metal' | 'electronics' | 'fruit' | 'parcel' | 'grit' | 'silk' | 'fang' | 'foil'
-  | 'key' | 'coin' | 'lighter' | 'bandage' | 'button' | 'clip' | 'watch' | 'phone';
+  | 'key' | 'coin' | 'lighter' | 'bandage' | 'button' | 'clip' | 'watch' | 'phone' | 'shell' | 'meat' | 'cable' | 'rope';
 
 /** Things that came down with you. The shrink beam takes everything inside it, pockets included. */
 export const POSSESSIONS: { item: Item; weight: number }[] = [
@@ -60,6 +60,10 @@ export const ITEMS: Record<Item, { name: string; weight: number; base: number; d
   clip: { name: 'Paper clip', weight: 0.2, base: 4, desc: 'Bend it straight at a bench for 1 metal.' },
   watch: { name: 'Wristwatch', weight: 0.5, base: 18, desc: 'It still ticks. The Duke likes things that still tick.' },
   phone: { name: 'Phone', weight: 0.8, base: 30, desc: 'No signal. Never will be. Strip it at a bench for 3 electronics.' },
+  shell: { name: 'Shell plate', weight: 1.5, base: 16, desc: 'A curved piece of stag-beetle wing case. Turns a blade; Rook would love to bend it into a guard.' },
+  meat: { name: 'Beetle meat', weight: 1, base: 9, desc: 'Pale, rich and heavy. Feeds a household for days.' },
+  cable: { name: 'Cargo cable', weight: 1, base: 18, desc: 'Silk twisted into cable. Strings the dead cargo line behind the cabinet.' },
+  rope: { name: 'Climbing line', weight: 0.8, base: 14, desc: 'A knotted silk line. Rig it at the pin on the book ledge, outside.' },
 };
 
 export const FACTIONS: Record<Faction, string> = {
@@ -78,8 +82,8 @@ export interface VendorDef {
 }
 
 export const VENDORS: Record<string, VendorDef> = {
-  pell: { name: "Pell's Pantry", sells: { food: 8, water: 6 }, buys: ['candy', 'food'], faction: 'table', markup: 1 },
-  rook: { name: 'Rook (Salvage Union)', sells: { metal: 2, grit: 30 }, buys: ['scrap', 'metal', 'electronics', 'fabric', 'foil', 'silk', 'fang', 'key', 'coin', 'lighter', 'watch', 'phone', 'button', 'clip'], faction: 'union', markup: 1.3 },
+  pell: { name: "Pell's Pantry", sells: { food: 8, water: 6 }, buys: ['candy', 'food', 'meat'], faction: 'table', markup: 1 },
+  rook: { name: 'Rook (Salvage Union)', sells: { metal: 2, grit: 30 }, buys: ['scrap', 'metal', 'electronics', 'fabric', 'foil', 'silk', 'fang', 'key', 'coin', 'lighter', 'watch', 'phone', 'button', 'clip', 'shell'], faction: 'union', markup: 1.3 },
   duke: { name: 'Duke Tallow (claims table)', sells: { grit: 40, food: 4 }, buys: ['foil', 'silk', 'fang', 'metal', 'electronics', 'food'], faction: 'union', markup: 1.5 },
   odo: { name: "Odo's Crumbs", sells: { food: 12 }, buys: ['candy', 'food'], faction: 'table', markup: 1.1 },
   wren: { name: "Wren's Wells", sells: { water: 14 }, buys: ['water'], faction: 'runners', markup: 1 },
@@ -89,13 +93,39 @@ export const VENDORS: Record<string, VendorDef> = {
 };
 
 /** Workbench recipes for the Underfall kit. */
-export const RECIPES: Record<string, { name: string; cost: Partial<Record<Item, number>>; weapon?: 'pick' | 'sling'; gives?: [Item, number] }> = {
+export interface Recipe {
+  name: string;
+  cost: Partial<Record<Item, number>>;
+  weapon?: 'pick' | 'sling';
+  gives?: [Item, number];
+  /** a one-off upgrade recorded as a story flag (saved) */
+  flag?: string;
+  /** needs this weapon already */
+  needs?: 'sling';
+  /** what it does, shown at the bench */
+  does?: string;
+}
+
+/** Where to find each material, for the bench's "uses" panel. */
+export const WHERE: Partial<Record<Item, string>> = {
+  silk: 'the web behind the biscuit tin (out through the crack in the Backs); Sump hoppers drop a strand',
+  fabric: 'the Spill heaps; Sela sells it in Threadmarket',
+  scrap: 'any heap',
+  metal: 'deep heaps, Lacquer Court, Rook',
+  fang: 'Sump hoppers and the tin spider',
+};
+
+export const RECIPES: Record<string, Recipe> = {
   pick: { name: 'Pick (toothpick spear)', cost: { scrap: 2, fabric: 1 }, weapon: 'pick' },
   sling: { name: 'Snapband (hairpin sling)', cost: { metal: 1, fabric: 2 }, weapon: 'sling' },
   grit: { name: 'Grit ×3', cost: { scrap: 1 }, gives: ['grit', 3] },
   button: { name: 'Strip a button (2 scrap)', cost: { button: 1 }, gives: ['scrap', 2] },
   clip: { name: 'Straighten a paper clip (1 metal)', cost: { clip: 1 }, gives: ['metal', 1] },
   phone: { name: 'Strip the phone (3 electronics)', cost: { phone: 1 }, gives: ['electronics', 3] },
+  // three uses competing for the same silk
+  cable: { name: 'Cargo cable', cost: { silk: 4 }, gives: ['cable', 1], does: 'restrings the cargo line behind the cabinet: a public lift up to Lacquer Court' },
+  rope: { name: 'Climbing line', cost: { silk: 3, fabric: 1 }, gives: ['rope', 1], does: 'rig it at the pin on the book ledge: a fast way down to the carpet and back' },
+  bands: { name: 'Silk bands for the Snapband', cost: { silk: 2 }, flag: 'silkBands', needs: 'sling', does: 'shots hit half again as hard and draw faster' },
 };
 
 /** Home upgrade tiers for the matchbox: cost and what each set piece does. */
@@ -120,8 +150,7 @@ export interface SaveData {
   maxHealth?: number;
   cart?: Partial<Record<Item, number>>;
   /** Chapter Zero onboarding (absent in older saves = finished) */
-  onboard?: { step: string; name: string; seed: number; done: string[]; t: number };
-  rep: Record<Faction, number>;
+  onboard?: { step: string; name: string; seed: number; done: string[]; t: number };  rep: Record<Faction, number>;
   satchel: boolean;
   quest: { stage: number; choice: string | null; flags: string[]; signatures: number; deliveries: number };
   world: {
