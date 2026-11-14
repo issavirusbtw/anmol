@@ -7,6 +7,7 @@ import { Bus } from './core/bus';
 import { Renderer, KEY_INTENSITY, INSIDE_EXPOSURE } from './render/renderer';
 import { Materials } from './render/materials';
 import { Fx } from './render/fx';
+import { Wildlife } from './world/wildlife';
 import { CollisionWorld } from './physics/collision';
 import { WorldBuilder, bakeScaleUniform } from './world/builder';
 import { WorldData, Hotspot, Lift } from './world/worldData';
@@ -25,6 +26,9 @@ import { UI } from './ui/ui';
 import { Audio } from './audio/audio';
 import { AutoPilot } from './debug/auto';
 import { buildSump } from './world/sump';
+import { buildOutside, outside as isOutside, inLacquer } from './world/outside';
+import { Expedition } from './systems/expedition';
+import { Critters } from './systems/critters';
 import { Underfall } from './systems/underfall';
 import { Onboarding } from './systems/onboarding';
 import { Arrival } from './events/arrival';
@@ -50,10 +54,13 @@ export class Game {
   pop: Population;
   candy: CandyEvent;
   fx: Fx;
+  wildlife: Wildlife;
   ui: UI;
   audio = new Audio();
   auto: AutoPilot | null = null;
   underfall!: Underfall;
+  expedition!: Expedition;
+  critters!: Critters;
   onboarding!: Onboarding;
   net!: Net;
   touch?: TouchControls;
@@ -98,6 +105,7 @@ export class Game {
     const t0 = performance.now();
     const b = new WorldBuilder(this.scene, this.mats, this.col);
     buildRoom(b, this.rng.fork('room'));
+    buildOutside(b, this.wd, this.rng.fork('outside'));
     buildCabinet(
       b,
       [[], [{ x0: 16, x1: 20, z0: -8.5, z1: -4.5 }], [{ x0: -20, x1: -16, z0: 0, z1: 4 }]],
@@ -172,6 +180,7 @@ export class Game {
       else this.candy.communityShards++;
     };
     this.fx = new Fx(this.scene, params.seed, this.wd.drips, this.wd.steam, (x, z, y) => this.col.groundAt(x, z, y));
+    this.wildlife = new Wildlife(this.scene, (x, z, y) => this.col.groundAt(x, z, y), params.seed, this.wd.ants, this.wd.moths);
 
     this.player = new Player(this.figs, this.col, this.bus);
     this.cam = new CameraRig(this.renderer.camera, this.col);
@@ -182,12 +191,18 @@ export class Game {
 
     this.ui = new UI(uiRoot, this.uiHost());
     this.underfall = new Underfall(this);
+    this.expedition = new Expedition(this);
+    this.critters = new Critters(this);
     this.onboarding = new Onboarding(this);
     this.net = new Net(this);
     this.bus.on((e) => {
       if (e.type === 'toast') this.ui.toast(e.text, e.kind);
       if (e.type === 'sfx') this.audio.play(e.name, e.vol ?? 1);
-      if (e.type === 'collect') this.audio.play('collect');
+      // a pickup made by a contact action chimes when the hand reaches it, not on the key press
+      if (e.type === 'collect') {
+        if (this.deferCollect) this.collectQueued = true;
+        else this.audio.play('collect');
+      }
       if (e.type === 'choice') this.applyChoiceVisuals();
       if (e.type === 'quest' && e.id === 'ch1-done')
         setTimeout(
@@ -376,6 +391,7 @@ export class Game {
     this.net.update(dt);
     this.figs.update(camera, this.mode === 'play' ? 140 : 260, dt);
     this.fx.update(dt, this.simTime, camera.position, this.mode === 'play' ? this.marker() : null);
+    this.wildlife.update(dt, this.simTime, this.player.fig.pos, camera.position);
     this.updateGlass();
     this.ui.setHudVisible(this.mode === 'play');
     if (this.mode === 'play') this.ui.update();
@@ -413,6 +429,8 @@ export class Game {
       this.wasInSump = inSump;
       this.bus.emit({ type: 'toast', text: inSump ? 'The Sump Ward. Keep your Pick up.' : 'Back on Drip Row.', kind: 'info' });
     }
+    this.expedition.update(dt);
+    this.critters.update(dt);
     if (pressed.includes('KeyR') && !uiOpen) this.player.recover();
     // survival + economy
     if (this.state.tickSurvival(dt) === 'collapsed') this.collapse();
@@ -424,12 +442,12 @@ export class Game {
       this.bus.emit({ type: 'toast', text: 'The giant is still hovering by the glass. It may drop more soon.', kind: 'info' });
     }
     // district tracking
-    const y = this.player.body.pos.y;
-    const d = y < TIER_Y[1] - 1.5 ? 'depths' : y < TIER_Y[2] - 1.5 ? 'market' : 'heights';
+    const d = this.districtAt(this.player.body.pos);
     if (d !== this.district) {
       this.district = d;
       this.bus.emit({ type: 'enter', zone: d });
-      this.bus.emit({ type: 'toast', text: d === 'depths' ? 'The Depths' : d === 'market' ? 'Threadmarket' : 'The Heights', kind: 'info' });
+      const names: Record<string, string> = { depths: 'The Depths', market: 'Threadmarket', heights: 'The Heights', lacquer: 'Lacquer Court', outside: 'Outside the cabinet. The room goes on forever back here.' };
+      this.bus.emit({ type: 'toast', text: names[d], kind: 'info' });
     }
     // gentle auto-unstuck: inside geometry with no progress
     if (!this.player.body.grounded && Math.abs(this.player.body.vel.y) < 0.01) {
@@ -537,8 +555,17 @@ export class Game {
         const p = this.underfall.pickups.find((q) => q.id === h.data.id);
         return p ? [`Pick up ${this.underfall.itemName(p.item)}${p.qty > 1 ? ` ×${p.qty}` : ''}`, null] : [null, null];
       }
+      case 'expedition':
+        return this.expedition.labels(h);
     }
     return [null, null];
+  }
+
+  private deferCollect = false;
+  private collectQueued = false;
+  private flushCollectSfx(): void {
+    if (this.collectQueued) this.audio.play('collect');
+    this.collectQueued = false;
   }
 
   act(h: Hotspot, key: 'E' | 'F'): void {
@@ -571,12 +598,17 @@ export class Game {
         // tutorial's last mission is "dig, then craft Grit (1 scrap)": the lift-job finds above can't eat the scrap
         if (this.onboarding.step === 'first' && need('scrap')) got.push('scrap');
         let n = 0;
+        this.deferCollect = true;
         for (const it of got) n += st.add(it, 1);
+        this.deferCollect = false;
         if (n > 0) {
           st.heapReady[h.id] = this.simTime + 30;
-          this.player.fig.state = 'collect';
           this.onboarding.onScavenge();
-          this.bus.emit({ type: 'toast', text: `Found: ${got.slice(0, n).map((i) => ITEMS[i].name).join(', ')}`, kind: 'good' });
+          const text = `Found: ${got.slice(0, n).map((i) => ITEMS[i].name).join(', ')}`;
+          this.player.startAction('dig', h.pos, () => {
+            this.flushCollectSfx();
+            this.bus.emit({ type: 'toast', text, kind: 'good' });
+          });
         }
         break;
       }
@@ -584,11 +616,19 @@ export class Game {
         if (key === 'F') {
           st.thirst = Math.min(100, st.thirst + 30);
           this.bus.emit({ type: 'drink' });
-          this.bus.emit({ type: 'sfx', name: 'drink' });
-          this.bus.emit({ type: 'toast', text: 'Cool, metallic, clean enough.', kind: 'good' });
+          this.player.startAction('drink', h.pos, () => {
+            this.bus.emit({ type: 'sfx', name: 'drink' });
+            this.bus.emit({ type: 'toast', text: 'Cool, metallic, clean enough.', kind: 'good' });
+          });
         } else {
+          this.deferCollect = true;
           const n = st.add('water', 2);
-          if (n) this.bus.emit({ type: 'toast', text: `Filled ${n} cap${n > 1 ? 's' : ''} with water.`, kind: 'good' });
+          this.deferCollect = false;
+          if (n)
+            this.player.startAction('fill', h.pos, () => {
+              this.flushCollectSfx();
+              this.bus.emit({ type: 'toast', text: `Filled ${n} cap${n > 1 ? 's' : ''} with water.`, kind: 'good' });
+            });
         }
         break;
       case 'kitchen':
@@ -611,6 +651,9 @@ export class Game {
         break;
       case 'drop':
         this.underfall.pickUp(h.data.id);
+        break;
+      case 'expedition':
+        this.expedition.act(h, key);
         break;
       case 'bed':
         if (key === 'F' && st.homeRepaired) {
@@ -679,8 +722,10 @@ export class Game {
         if (this.candy.takeShard(i)) {
           if (this.pop.candy.shards[i]) this.pop.candy.shards[i].taken = true;
           this.candy.playerShards++;
+          this.deferCollect = true;
           st.add('candy', 1);
-          this.player.fig.state = 'collect';
+          this.deferCollect = false;
+          this.player.startAction('dig', h.pos, () => this.flushCollectSfx());
         }
         break;
       }
@@ -801,10 +846,13 @@ export class Game {
     const recipe = RECIPES[id];
     if (recipe) {
       if (recipe.weapon && st.weapons[recipe.weapon]) return { ok: false, reason: 'You already have one.' };
+      if (recipe.flag && this.story.flags.has(recipe.flag)) return { ok: false, reason: 'Already fitted.' };
+      if (recipe.needs && !st.weapons[recipe.needs]) return { ok: false, reason: 'Make a Snapband first.' };
       for (const [it, n] of Object.entries(recipe.cost) as [Item, number][]) if (st.count(it) < n) return { ok: false, reason: `Need ${Object.entries(recipe.cost).map(([i, q]) => `${q} ${ITEMS[i as Item].name.toLowerCase()}`).join(', ')}.` };
       for (const [it, n] of Object.entries(recipe.cost) as [Item, number][]) st.remove(it, n);
       if (recipe.weapon) st.weapons[recipe.weapon] = true;
       if (recipe.gives) st.add(recipe.gives[0], recipe.gives[1], true);
+      if (recipe.flag) this.story.flags.add(recipe.flag);
       this.bus.emit({ type: 'sfx', name: 'repair' });
       return { ok: true };
     }
@@ -835,6 +883,13 @@ export class Game {
   }
 
   // ---------- lifts + checkpoint ----------
+  /** outside and Lacquer Court are their own districts, so riding the cargo line never counts as entering Threadmarket or the Heights */
+  districtAt(p: THREE.Vector3): string {
+    if (isOutside(p)) return 'outside';
+    if (inLacquer(p)) return 'lacquer';
+    return p.y < TIER_Y[1] - 1.5 ? 'depths' : p.y < TIER_Y[2] - 1.5 ? 'market' : 'heights';
+  }
+
   liftUnderPlayer(): Lift | null {
     const g = this.player.body.ground;
     if (!g || !g.dynamic) return null;
@@ -1095,8 +1150,8 @@ export class Game {
     this.player.place(new THREE.Vector3(d.player.x, d.player.y + 0.05, d.player.z), d.player.yaw);
     this.cam.yaw = d.player.yaw + Math.PI;
     this.cam.snap(this.focusPoint());
-    const y = d.player.y;
-    this.district = y < TIER_Y[1] - 1.5 ? 'depths' : y < TIER_Y[2] - 1.5 ? 'market' : 'heights';
+    this.district = this.districtAt(new THREE.Vector3(d.player.x, d.player.y, d.player.z));
+    this.wd.lifts.get('cargo')!.working = this.story.flags.has('cargoFixed');
     this.mode = 'play';
     // saves from before Chapter Zero have no onboard block: they count as finished
     this.onboarding.load(d.onboard);
@@ -1187,6 +1242,7 @@ export class Game {
       homeAction: (a: 'build' | 'deposit' | 'take' | 'cook' | 'barrel' | 'fang', i?: Item) => g.homeAction(a, i),
       beginGame: (fromSave: boolean) => g.beginGame(fromSave),
       district: () => g.district,
+      hasFlag: (f: string) => g.story.flags.has(f),
       stats: () =>
         `${g.renderer.fps.toFixed(0)} fps · ${g.renderer.avgFrameMs.toFixed(1)} ms · res ${(g.renderer.resScale * 100).toFixed(0)}%\n${g.renderer.gl.info.render.calls} calls · ${(g.renderer.gl.info.render.triangles / 1000).toFixed(0)}k tris · ${g.figs.drawn} people\n${g.renderer.rendererInfo.slice(0, 60)}`,
       sfx: (n: string) => g.audio.play(n),
