@@ -176,7 +176,7 @@ test('collection and inventory', async ({ page }) => {
   await boot(page, 'state=lower');
   await setup(page, -19.2, 0, 3.6, Math.PI); // just north of heap0, facing +z toward it
   await page.keyboard.press('KeyE');
-  await simWait(page, 0.4);
+  await simWait(page, 1.2); // let the dig animation finish before pressing again
   const inv = await G(page, '({...g.state.inv})');
   expect(Object.values(inv).reduce((a: number, b: any) => a + b, 0)).toBeGreaterThanOrEqual(2);
   // the heap is now picked clean
@@ -229,7 +229,8 @@ test('candy event: hand, impact, shards, crowd and economy', async ({ page }) =>
   expect(await G(page, "g.state.priceBuy('odo', 'food')")).toBeLessThanOrEqual(price0);
   // the crowd reacts
   expect(await G(page, "g.pop.npcs.filter(n => n.mode === 'rush' || n.mode === 'gather').length")).toBeGreaterThanOrEqual(6);
-  // the player grabs a shard with the context action
+  // the player grabs a shard with the context action, once the shards have stopped rolling
+  await simWait(page, 1.2);
   const s = await G(page, 'g.candy.shards.find(s => !s.taken).pos.clone()');
   await setup(page, s.x, 20, s.z + 0.6, 0);
   await page.keyboard.press('KeyF');
@@ -458,3 +459,93 @@ test('Home progression: build the Stash Tin and keep the stash through save/load
 });
 
 
+
+test('Expedition: steal silk while the spider feeds, a lure brings it down, and it goes home when you leave', async ({ page }) => {
+  await boot(page, 'state=lower&kit=1');
+  await page.waitForFunction(() => (window as any).__game.expedition.state === 'feed', null, { timeout: 60_000 });
+  await setup(page, 45.2, -20, -38.6, -Math.PI / 2); // at the far anchor, facing the web
+  await page.keyboard.press('KeyE');
+  await simWait(page, 0.5);
+  expect(await G(page, "g.state.count('silk')")).toBe(2);
+  expect(await G(page, 'g.expedition.state')).toBe('feed'); // busy eating: the cut went unnoticed
+  await page.keyboard.press('KeyF'); // pluck the thread
+  await page.waitForFunction(() => (window as any).__game.expedition.state === 'hunt', null, { timeout: 15_000 });
+  await setup(page, -8, 0.1, -7.4, 0); // back inside the cabinet
+  await page.waitForFunction(() => ['retreat', 'climb', 'hub'].includes((window as any).__game.expedition.state), null, { timeout: 10_000 });
+});
+
+test('Expedition: a cargo cable from the bench restrings the line, Lacquer Court holds no story trigger, the fix saves, old saves still load', async ({ page }) => {
+  await boot(page, 'state=lower');
+  const stage = await G(page, 'g.story.stage');
+  await page.evaluate(() => { const g = (window as any).__game; g.state.add('silk', 4, true); g.ui.openCraft(); });
+  await page.locator('[data-testid=craft-cable]').click();
+  await page.keyboard.press('Escape');
+  await setup(page, -27, 0, -16.4, Math.PI / 2); // at the cargo winch
+  await page.keyboard.press('KeyE');
+  await simWait(page, 0.3);
+  expect(await G(page, "g.story.flags.has('cargoFixed')")).toBe(true);
+  expect(await G(page, "g.wd.lifts.get('cargo').working")).toBe(true);
+  // walk Lacquer Court east to west: it stays its own district and never advances the story
+  await setup(page, -29, 42.1, -10, -Math.PI / 2);
+  await hold(page, ['KeyW'], 3000);
+  expect(await G(page, 'g.player.body.pos.x')).toBeLessThan(-22);
+  await setup(page, -29, 42.1, 0, -Math.PI / 2);
+  await hold(page, ['KeyW'], 2500);
+  expect(await G(page, 'g.district')).toBe('lacquer');
+  expect(await G(page, 'g.story.stage')).toBe(stage);
+  await setup(page, -27, 0, -16.4, Math.PI / 2);
+  await page.keyboard.press('Escape');
+  await page.locator('[data-testid=save]').click();
+  await page.goto('/');
+  await page.waitForFunction(() => (window as any).__game);
+  await page.locator('[data-testid=continue]').click();
+  await page.waitForFunction(() => (window as any).__game.mode === 'play');
+  expect(await G(page, "g.wd.lifts.get('cargo').working")).toBe(true);
+  // a save from before the expedition: no cargo lift, none of the new flags
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.evaluate(() => {
+    const d = JSON.parse(localStorage.getItem('shelflife.save')!);
+    delete d.world.lifts.cargo;
+    d.quest.flags = d.quest.flags.filter((f: string) => !['cargoFixed', 'climbRigged', 'silkBands', 'ruinsSeen'].includes(f));
+    localStorage.setItem('shelflife.save', JSON.stringify(d));
+  });
+  await page.goto('/');
+  await page.waitForFunction(() => (window as any).__game);
+  await page.locator('[data-testid=continue]').click();
+  await page.waitForFunction(() => (window as any).__game.mode === 'play');
+  expect(await G(page, "g.wd.lifts.get('cargo').working")).toBe(false);
+  expect(await G(page, "g.wd.lifts.get('cargo').t")).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+test('Room floor: the skirting mouse rears before it lunges, and a jab in its recovery lands double', async ({ page }) => {
+  await boot(page, 'state=lower&kit=1');
+  await page.waitForFunction(() => (window as any).__game.critters.mouse === 'eat', null, { timeout: 60_000 });
+  const m = await G(page, 'g.critters.mb.pos.clone()');
+  await setup(page, m.x + 6, -20, m.z + 1, Math.atan2(-(-6), -(-1)));
+  await page.waitForFunction(() => (window as any).__game.critters.mouse === 'rear', null, { timeout: 15_000 });
+  await hold(page, ['KeyA'], 400); // sidestep the lunge
+  await page.waitForFunction(() => (window as any).__game.critters.mouse === 'recover', null, { timeout: 5_000 });
+  await page.evaluate(() => { const g = (window as any).__game, p = g.player.body.pos, m = g.critters.mb.pos; g.cam.yaw = Math.atan2(-(m.x - p.x), -(m.z - p.z)); });
+  await hold(page, ['KeyW'], 250);
+  await page.evaluate(() => { const g = (window as any).__game, p = g.player.body.pos, m = g.critters.mb.pos; g.cam.yaw = Math.atan2(-(m.x - p.x), -(m.z - p.z)); });
+  await page.mouse.click(640, 360);
+  await page.waitForFunction(() => (window as any).__game.critters.hp < 120, null, { timeout: 3_000 });
+  expect(await G(page, 'g.critters.hp')).toBeLessThanOrEqual(96);
+});
+
+test('Room floor: the cat swats you in the open and passes you by under the cabinet', async ({ page }) => {
+  await boot(page, 'state=lower');
+  await setup(page, 0, -20, -30, Math.PI / 2);
+  await page.evaluate(() => { const g = (window as any).__game; g.critters.catAt = g.simTime + 0.5; });
+  await page.waitForFunction(() => (window as any).__game.critters.cat === 'warn', null, { timeout: 5_000 });
+  await page.waitForFunction(() => (window as any).__game.critters.cat === 'away', null, { timeout: 30_000 });
+  expect(await G(page, 'g.state.health')).toBeLessThan(70);
+  await page.evaluate(() => { const g = (window as any).__game; g.state.health = 100; });
+  await setup(page, 0, -20, -9, Math.PI);
+  await page.evaluate(() => { const g = (window as any).__game; g.critters.catAt = g.simTime + 0.5; });
+  await page.waitForFunction(() => (window as any).__game.critters.cat === 'cross', null, { timeout: 10_000 });
+  await page.waitForFunction(() => (window as any).__game.critters.cat === 'away', null, { timeout: 30_000 });
+  expect(await G(page, 'g.state.health')).toBeGreaterThan(95);
+});
