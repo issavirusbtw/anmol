@@ -8,7 +8,9 @@ const outDir = process.argv[3] ?? 'shots/auto';
 const extra = process.argv[4] ?? '';
 fs.mkdirSync(outDir, { recursive: true });
 const browser = await chromium.launch({ headless: true, args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist'] });
-const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+// VIDEO=1 also records the whole run as a .webm into outDir
+const video = process.env.VIDEO ? { recordVideo: { dir: outDir, size: { width: 1280, height: 720 } } } : {};
+const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, ...video });
 page.on('pageerror', (e) => console.log('pageerror:', e.message));
 page.on('console', (m) => {
   const t = m.text();
