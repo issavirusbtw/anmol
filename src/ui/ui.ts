@@ -1,6 +1,6 @@
 // HUD and panels. Small, paper-and-tape styled, and every visible button does something real.
 import { GAME_TITLE, GAME_SUBTITLE, TIER_Y, CABINET } from '../config';
-import { GameState, ITEMS, Item, VENDORS, FACTIONS, Faction, RECIPES, HOME_TIERS } from '../systems/state';
+import { GameState, ITEMS, Item, VENDORS, FACTIONS, Faction, RECIPES, HOME_TIERS, WHERE } from '../systems/state';
 import type { DialogueNode } from '../systems/story';
 
 export interface UIHost {
@@ -27,6 +27,7 @@ export interface UIHost {
   homeAction(a: 'build' | 'deposit' | 'take' | 'cook' | 'barrel' | 'fang', item?: Item): { ok: boolean; msg: string };
   beginGame(fromSave: boolean): void;
   district(): string;
+  hasFlag(f: string): boolean;
   stats(): string;
   sfx(name: string): void;
 }
@@ -348,14 +349,24 @@ export class UI {
       ...Object.entries(RECIPES).filter(([id]) => !['button', 'clip', 'phone'].includes(id) || s.count(id as Item) > 0).map(([id, r]): [string, string, string] => [
         id,
         r.name,
-        `${Object.entries(r.cost).map(([i, n]) => `${n} ${ITEMS[i as Item].name.toLowerCase()}`).join(' + ')}${r.weapon === 'pick' ? ' → click / F to jab, 3rd hit lunges' : r.weapon === 'sling' ? ' → hold Q to draw, release to fire' : ''}`,
+        `${Object.entries(r.cost).map(([i, n]) => `${n} ${ITEMS[i as Item].name.toLowerCase()}`).join(' + ')}${r.weapon === 'pick' ? ' → click / F to jab, 3rd hit lunges' : r.weapon === 'sling' ? ' → hold Q to draw, release to fire' : r.does ? ` → ${r.does}` : ''}`,
       ]),
     ];
+    // what the materials you carry are good for: every recipe and home piece that uses them, and where to find more
+    const uses: string[] = [];
+    for (const [k, n] of Object.entries(s.inv)) {
+      const it = k as Item;
+      if (!n) continue;
+      const by = [...Object.values(RECIPES).filter((r) => r.cost[it]).map((r) => r.name), ...HOME_TIERS.filter((t) => t.cost[it]).map((t) => `${t.name} (home)`)];
+      if (by.length > 1 || WHERE[it]) uses.push(`<b>${ITEMS[it].name}</b> ×${n}: ${by.join(' · ') || 'nothing at the bench'}${WHERE[it] ? `<br><i>Find more: ${WHERE[it]}</i>` : ''}`);
+    }
+    if (uses.length) box.appendChild(el('div', 'sub', uses.join('<br>')));
     for (const [id, name, desc] of recipes) {
       const row = el('div', 'row', `<span><b>${name}</b><br><i>${desc}</i></span>`);
       const b = el('button', 'btn small', 'Make') as HTMLButtonElement;
       b.dataset.testid = `craft-${id}`;
-      if ((id === 'satchel' && s.satchel) || (RECIPES[id]?.weapon && s.weapons[RECIPES[id].weapon!])) b.disabled = true;
+      const r = RECIPES[id];
+      if ((id === 'satchel' && s.satchel) || (r?.weapon && s.weapons[r.weapon]) || (r?.flag && this.host.hasFlag(r.flag))) b.disabled = true;
       b.onclick = () => {
         const r = this.host.craft(id);
         this.toast(r.ok ? `Made: ${name}` : r.reason!, r.ok ? 'good' : 'bad');
