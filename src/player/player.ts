@@ -1,7 +1,7 @@
 // Third-person player controller and orbit camera with collision avoidance.
 import * as THREE from 'three';
 import { Body, CollisionWorld } from '../physics/collision';
-import { Figure, FigureSystem, Look } from '../characters/figure';
+import { CONTACT_AT, Figure, FigureSystem, Look } from '../characters/figure';
 import { Input } from '../core/input';
 import { Bus } from '../core/bus';
 
@@ -36,6 +36,8 @@ export class Player {
   speedMul = 1;
   distanceWalked = 0;
   jumps = 0;
+  private act: { kind: 'dig' | 'drink' | 'fill'; yaw: number | null; contact: number; onContact: (() => void) | null } | null = null;
+  private prevSpeed = 0;
 
   constructor(
     figs: FigureSystem,
@@ -55,6 +57,29 @@ export class Player {
     this.fig.pos.copy(p);
   }
 
+  /**
+   * Turn toward `target`, play a contact action, and run `onContact` on the frame the hand meets it.
+   * Moving cancels the action early; the contact feedback still fires so nothing is lost.
+   */
+  startAction(kind: 'dig' | 'drink' | 'fill', target: THREE.Vector3 | null, onContact: (() => void) | null = null): void {
+    this.finishAction();
+    const dur = kind === 'dig' ? 1.05 : kind === 'drink' ? 1.25 : 1.0;
+    const yaw = target ? Math.atan2(target.x - this.body.pos.x, target.z - this.body.pos.z) : null;
+    this.act = { kind, yaw, contact: CONTACT_AT[kind] * dur, onContact };
+    this.fig.action = { kind, t: 0, dur };
+  }
+
+  get acting(): boolean {
+    return this.act !== null;
+  }
+
+  private finishAction(): void {
+    const cb = this.act?.onContact;
+    this.act = null;
+    this.fig.action = null;
+    cb?.();
+  }
+
   recover(): void {
     this.place(this.lastSafe.clone().add(new THREE.Vector3(0, 0.2, 0)), this.fig.yaw);
     this.bus.emit({ type: 'toast', text: 'You scramble back to solid ground.', kind: 'info' });
@@ -62,7 +87,27 @@ export class Player {
 
   update(dt: number, input: Input, camYaw: number, pressed: string[]): void {
     const b = this.body;
-    const mv = this.frozen ? { x: 0, z: 0, sprint: false } : input.move();
+    let mv = this.frozen ? { x: 0, z: 0, sprint: false } : input.move();
+    const a = this.fig.action;
+    if (this.act && a) {
+      a.t += dt;
+      if (this.act.onContact && a.t >= this.act.contact) {
+        const cb = this.act.onContact;
+        this.act.onContact = null;
+        cb();
+      }
+      // steering away cancels the recovery so controls stay responsive
+      if (a.t >= a.dur || (Math.hypot(mv.x, mv.z) > 0.3 && a.t > 0.12)) this.finishAction();
+      else {
+        mv = { x: 0, z: 0, sprint: false };
+        if (this.act.yaw !== null) {
+          let d = this.act.yaw - this.fig.yaw;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          this.fig.yaw += d * Math.min(1, dt * 10);
+        }
+      }
+    }
     const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw);
     const rx = Math.cos(camYaw), rz = -Math.sin(camYaw);
     let dx = fx * mv.z + rx * mv.x;
@@ -131,11 +176,19 @@ export class Player {
       let d = targetYaw - this.fig.yaw;
       while (d > Math.PI) d -= Math.PI * 2;
       while (d < -Math.PI) d += Math.PI * 2;
+      // a hard reversal plants first: the weight shift reads as intent, the yaw still swings at full rate
+      if (b.grounded && Math.abs(d) > 1.6 && this.prevSpeed > 1.5) {
+        const w = Math.sign(d) * Math.min(1, (Math.abs(d) - 1.2) / 1.5) * Math.min(1, this.prevSpeed / 4);
+        if (Math.abs(w) > Math.abs(this.fig.turn)) this.fig.turn = w;
+      }
       this.fig.yaw += d * Math.min(1, dt * 12);
     }
     const hs = Math.hypot(b.vel.x, b.vel.z);
+    if (b.grounded && !moving && this.prevSpeed > 2.2 && hs < this.prevSpeed) this.fig.settle = Math.max(this.fig.settle, Math.min(1, this.prevSpeed / 6.6));
+    this.prevSpeed = moving ? hs : 0;
     this.fig.speed = hs;
-    if (!b.grounded) this.fig.state = b.vel.y > 0 ? 'jump' : 'fall';
+    if (this.act) this.fig.state = 'collect';
+    else if (!b.grounded) this.fig.state = b.vel.y > 0 ? 'jump' : 'fall';
     else if (hs > 4.8) this.fig.state = 'run';
     else if (hs > 0.4) this.fig.state = 'walk';
     else this.fig.state = 'idle';
@@ -151,7 +204,7 @@ export class Player {
       this.safeTimer += dt;
       if (this.safeTimer > 0.6) this.lastSafe.copy(b.pos);
     } else this.safeTimer = 0;
-    if (b.pos.y < -12) this.recover();
+    if (b.pos.y < -30) this.recover(); // the room floor outside is at -20
   }
 }
 
