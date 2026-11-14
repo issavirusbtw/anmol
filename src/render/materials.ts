@@ -35,7 +35,10 @@ export type MatKey =
   | 'candy'
   | 'carpet'
   | 'roomWall'
-  | 'matte';
+  | 'matte'
+  | 'amberGlass'
+  | 'landmark'
+  | 'landmarkGloss';
 
 export interface MatInfo {
   mat: THREE.Material;
@@ -158,6 +161,31 @@ export class Materials {
     add('carpet', std({ map: fab.map, bumpMap: fab.bump, bumpScale: 4, roughness: 1 }), 30, false, true);
     add('roomWall', std({ map: paint.map, roughness: 0.95 }), 120, false, true);
     add('matte', std({ roughness: 0.85 }), 0);
+    // thick amber bottle glass: see-through but strongly tinted, glossy both sides
+    add(
+      'amberGlass',
+      new THREE.MeshPhysicalMaterial({
+        vertexColors: true,
+        color: 0xb4621c,
+        roughness: 0.06,
+        metalness: 0,
+        transparent: true,
+        opacity: 0.62,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        clearcoat: 1,
+        clearcoatRoughness: 0.05,
+        envMapIntensity: 2.2,
+        emissive: new THREE.Color(0.09, 0.035, 0.0),
+      }),
+      0,
+      false,
+      true,
+      true,
+    );
+    const lm = T.landmarkAtlas(S, rng.fork('landmark'));
+    add('landmark', std({ map: lm.map, roughness: 0.78, side: THREE.DoubleSide }), 0);
+    add('landmarkGloss', std({ map: lm.map, bumpMap: wrap.bump, bumpScale: 1.2, roughness: 0.28, metalness: 0.25, side: THREE.DoubleSide, envMapIntensity: 2 }), 0);
   }
 
   get(k: MatKey): MatInfo {

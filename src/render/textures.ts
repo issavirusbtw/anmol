@@ -410,6 +410,102 @@ export function wrapperAtlas(size: number, rng: Rng): TexSet {
   return { map: toTex(c, true), bump: toTex(bump, false) };
 }
 
+/** Prints on the big landmark objects, 2x2: sardine tin label, beer label, candy wrapper, paperback cover. All invented brands. */
+export function landmarkAtlas(size: number, rng: Rng): TexSet {
+  const c = makeCanvas(size);
+  const x = c.getContext('2d')!;
+  const h = size / 2;
+  const wear = (ox: number, oy: number, n: number, col: string) => {
+    for (let i = 0; i < n; i++) {
+      x.fillStyle = col.replace('A', rng.range(0.05, 0.3).toFixed(2));
+      x.beginPath();
+      x.ellipse(ox + rng.range(0, h), oy + rng.range(0, h), rng.range(2, h * 0.08), rng.range(1, h * 0.04), rng.range(0, 3), 0, Math.PI * 2);
+      x.fill();
+    }
+  };
+  // 0: sardine tin, faded blue-and-cream with a fish and a wave band, scuffed through to bare metal
+  x.fillStyle = '#c9cfd0';
+  x.fillRect(0, 0, h, h);
+  x.fillStyle = '#5f7f96';
+  x.fillRect(0, h * 0.12, h, h * 0.5);
+  x.fillStyle = '#e9dfc4';
+  x.fillRect(0, h * 0.62, h, h * 0.22);
+  x.fillStyle = '#e9dfc4';
+  x.beginPath();
+  x.ellipse(h * 0.5, h * 0.36, h * 0.3, h * 0.09, 0, 0, Math.PI * 2);
+  x.moveTo(h * 0.78, h * 0.36);
+  x.lineTo(h * 0.92, h * 0.26);
+  x.lineTo(h * 0.92, h * 0.46);
+  x.fill();
+  x.fillStyle = '#2b3d4c';
+  x.beginPath();
+  x.arc(h * 0.28, h * 0.34, h * 0.018, 0, Math.PI * 2);
+  x.fill();
+  x.fillStyle = '#a33a2c';
+  x.textAlign = 'center';
+  x.font = `bold ${h * 0.1}px Georgia, serif`;
+  x.fillText('NORTHCAPE', h / 2, h * 0.75);
+  x.font = `${h * 0.05}px Georgia, serif`;
+  x.fillText('BRISLING IN OLIVE OIL', h / 2, h * 0.81);
+  wear(0, 0, 90, 'rgba(210,214,216,A)');
+  wear(0, 0, 40, 'rgba(120,90,40,A)');
+  // 1: beer label, cream with a red oval, half worn away, a damp tide line at the bottom
+  x.fillStyle = '#e6d6ae';
+  x.fillRect(h, 0, h, h);
+  x.strokeStyle = '#8a2a1e';
+  x.lineWidth = h * 0.025;
+  x.strokeRect(h + h * 0.05, h * 0.05, h * 0.9, h * 0.9);
+  x.fillStyle = '#9e2e22';
+  x.beginPath();
+  x.ellipse(h * 1.5, h * 0.42, h * 0.34, h * 0.22, 0, 0, Math.PI * 2);
+  x.fill();
+  x.fillStyle = '#efe2bd';
+  x.font = `bold ${h * 0.11}px Georgia, serif`;
+  x.fillText('HOLLOWAY', h * 1.5, h * 0.45);
+  x.fillStyle = '#3b2a1a';
+  x.font = `${h * 0.065}px Georgia, serif`;
+  x.fillText('PALE ALE · EST. 1891', h * 1.5, h * 0.75);
+  x.fillText('330 ml', h * 1.5, h * 0.84);
+  wear(h, 0, 120, 'rgba(180,140,80,A)');
+  x.fillStyle = 'rgba(120,80,30,0.25)';
+  x.fillRect(h, h * 0.88, h, h * 0.12);
+  // 2: candy wrapper, glossy red with white stripes and a cherry
+  x.fillStyle = '#c8202f';
+  x.fillRect(0, h, h, h);
+  x.fillStyle = '#f6efe6';
+  for (let i = -4; i < 10; i++) {
+    x.beginPath();
+    x.moveTo(i * h * 0.14, h);
+    x.lineTo(i * h * 0.14 + h * 0.05, h);
+    x.lineTo(i * h * 0.14 + h * 0.35, h * 2);
+    x.lineTo(i * h * 0.14 + h * 0.3, h * 2);
+    x.fill();
+  }
+  x.fillStyle = '#c8202f';
+  x.beginPath();
+  x.ellipse(h * 0.5, h * 1.5, h * 0.3, h * 0.2, 0, 0, Math.PI * 2);
+  x.fill();
+  x.fillStyle = '#ffe9a8';
+  x.font = `bold ${h * 0.1}px Georgia, serif`;
+  x.fillText('CHERRY', h * 0.5, h * 1.49);
+  x.font = `bold ${h * 0.07}px Georgia, serif`;
+  x.fillText('DROPS', h * 0.5, h * 1.58);
+  // 3: paperback cover, cloth-cream with a title block, dusty top edge
+  x.fillStyle = '#d9cfb4';
+  x.fillRect(h, h, h, h);
+  x.fillStyle = '#35506a';
+  x.fillRect(h * 1.1, h * 1.12, h * 0.8, h * 0.34);
+  x.fillStyle = '#e9dfc4';
+  x.font = `bold ${h * 0.08}px Georgia, serif`;
+  x.fillText('THE LONG', h * 1.5, h * 1.27);
+  x.fillText('SUMMER', h * 1.5, h * 1.37);
+  x.fillStyle = '#5a4a36';
+  x.font = `${h * 0.05}px Georgia, serif`;
+  x.fillText('a novel', h * 1.5, h * 1.6);
+  wear(h, h, 60, 'rgba(150,140,120,A)');
+  return { map: toTex(c, true, false) };
+}
+
 /** Matchbox labels: 2x2 atlas of original designs. */
 export function labelAtlas(size: number, rng: Rng): TexSet {
   const c = makeCanvas(size);
